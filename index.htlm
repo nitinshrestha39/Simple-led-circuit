@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive LED Circuit</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .circuit-container {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+            border: 1px solid #333;
+            position: relative;
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .led-glow {
+            transition: all 0.3s ease;
+        }
+        .electron {
+            fill: #ff4444;
+            stroke: #400;
+            stroke-width: 1;
+        }
+        .wire {
+            stroke: #aaa;
+            stroke-width: 2;
+            fill: none;
+        }
+        .component-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #ccc;
+        }
+        .terminal-label {
+            font-size: 12px;
+            fill: #999;
+        }
+        .battery-positive {
+            stroke: #aaa;
+            stroke-width: 3;
+        }
+        .battery-negative {
+            stroke: #aaa;
+            stroke-width: 3;
+        }
+        input[type="range"] {
+            background: #333;
+            width: 200px;
+        }
+        button {
+            background-color: #444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        
+        .led-glow-effect {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: radial-gradient(
+                circle at center,
+                rgba(255, 80, 80, 0.9) 0%,
+                rgba(255, 30, 30, 0.6) 50%,
+                rgba(255, 0, 0, 0) 70%
+            );
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            left: 208px;
+            top: 127px;
+            transform: scale(0.8);
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Interactive LED Circuit</h1>
+    <p>Adjust the resistor value to see how it affects electron flow and LED brightness:</p>
+    
+    <div class="circuit-container">
+        <svg width="400" height="240" viewBox="0 0 400 200" id="circuit-svg">
+            <!-- Battery -->
+            <line x1="120" y1="160" x2="120" y2="200" class="battery-positive"/>
+            <line x1="140" y1="170" x2="140" y2="190" class="battery-negative"/>
+            <text x="105" y="195" class="terminal-label">+</text>
+            <text x="150" y="195" class="terminal-label">−</text>
+            <text x="105" y="220" class="component-label">9V Battery</text>
+            
+            <!-- Connection from battery -->
+            <line x1="20" y1="100" x2="90" y2="100" class="wire"/>
+            
+            <!-- Resistor -->
+            <path d="M90 100 L100 90 L110 110 L120 90 L130 110 L140 90 L150 100" 
+                  stroke="#aaa" stroke-width="3" fill="none"/>
+            <line x1="150" y1="100" x2="170" y2="100" class="wire"/>
+            <text x="110" y="80" class="component-label" id="resistorValue">220Ω</text>
+            
+            <!-- LED with centered glow -->
+            <line x1="170" y1="100" x2="190" y2="100" class="wire"/>
+            <polygon points="190,90 210,100 190,110" fill="#222" stroke="#aaa" stroke-width="1" id="led-body" class="led-glow"/>
+            <line x1="210" y1="90" x2="210" y2="110" stroke="#aaa" stroke-width="3"/>
+            <text x="215" y="95" class="terminal-label">−</text>
+            <text x="180" y="95" class="terminal-label">+</text>
+            <text x="185" y="130" class="component-label">LED</text>
+            
+            <!-- Return wire -->
+            <line x1="210" y1="100" x2="250" y2="100" class="wire"/>
+            <line x1="250" y1="100" x2="250" y2="180" class="wire"/>
+            <line x1="250" y1="180" x2="140" y2="180" class="wire"/>
+            <line x1="120" y1="180" x2="20" y2="180" class="wire"/>
+            <line x1="20" y1="100" x2="20" y2="180" class="wire"/>
+            
+            <!-- Electron container - will be populated by JavaScript -->
+            <g id="electron-container"></g>
+        </svg>
+        
+        <div class="led-glow-effect" id="glowEffect"></div>
+    </div>
+    
+    <div class="controls">
+        <label for="resistorSlider">Resistor (Ω): <span id="resistorValueDisplay">220</span></label>
+        <input type="range" id="resistorSlider" min="100" max="20000" value="220" step="100">
+        <button id="animateBtn">Toggle Animation</button>
+    </div>
+    
+    <script>
+        const resistorSlider = document.getElementById('resistorSlider');
+        const resistorValueDisplay = document.getElementById('resistorValueDisplay');
+        const resistorValueLabel = document.getElementById('resistorValue');
+        const animateBtn = document.getElementById('animateBtn');
+        const ledBody = document.getElementById('led-body');
+        const glowEffect = document.getElementById('glowEffect');
+        const electronContainer = document.getElementById('electron-container');
+        const svg = document.getElementById('circuit-svg');
+        
+        let isAnimating = true;
+        let animationId = null;
+        const BASE_SPEED = 3.0; // Increased to 1 pixel per frame (5x original speed)
+        const ELECTRON_SPACING = 30; // Fixed spacing between electrons
+        const PATH_LENGTH = 710; // Approximate length of the circuit path
+        const ELECTRON_COUNT = Math.floor(PATH_LENGTH / ELECTRON_SPACING);
+        let electrons = [];
+        let positions = new Array(ELECTRON_COUNT).fill(0);
+        
+        // Create electrons with fixed spacing
+        function createElectrons() {
+            electronContainer.innerHTML = '';
+            electrons = [];
+            
+            for (let i = 0; i < ELECTRON_COUNT; i++) {
+                const electron = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                electron.setAttribute('cx', '20');
+                electron.setAttribute('cy', '100');
+                electron.setAttribute('r', '3');
+                electron.setAttribute('class', 'electron');
+                electronContainer.appendChild(electron);
+                electrons.push(electron);
+                
+                // Initialize positions with proper spacing
+                positions[i] = -i * ELECTRON_SPACING;
+            }
+        }
+        
+        // Format resistor value for display
+        function formatResistance(value) {
+            return value >= 1000 ? (value/1000) + 'k' : value;
+        }
+        
+        // Custom brightness curve
+        function calculateBrightness(resistor) {
+            if (resistor >= 20000) return 0;
+            if (resistor <= 100) return 1;
+            
+            if (resistor <= 1000) {
+                const t = (resistor - 100) / (1000 - 100);
+                return 1 - t * 0.3;
+            } else if (resistor <= 10000) {
+                const t = (Math.log10(resistor) - 3) / (4 - 3);
+                return 0.7 - t * 0.3;
+            } else {
+                const t = (resistor - 10000) / (20000 - 10000);
+                return 0.4 * (1 - t);
+            }
+        }
+        
+        // Get position along circuit path
+        function getPosition(progress) {
+            progress = ((progress % PATH_LENGTH) + PATH_LENGTH) % PATH_LENGTH;
+            
+            if (progress < 70) return { x: 20 + progress, y: 100 }; // First horizontal
+            if (progress < 150) return { x: 90 + (progress-70)*60/80, y: 100 }; // To resistor
+            if (progress < 230) return { x: 150 + (progress-150)*80/80, y: 100 }; // To LED
+            if (progress < 310) return { x: 230 + (progress-230)*20/80, y: 100 }; // After LED
+            if (progress < 390) return { x: 250, y: 100 + (progress-310)*80/80 }; // Down
+            if (progress < 470) return { x: 250 - (progress-390)*110/80, y: 180 }; // Left bottom
+            if (progress < 550) return { x: 140 - (progress-470)*120/80, y: 180 }; // More left
+            if (progress < 630) return { x: 20, y: 180 - (progress-550)*80/80 }; // Up
+            return { x: 20, y: 100 + (progress-630)*80/80 }; // Final vertical
+        }
+        
+        // Animation loop
+        function animate() {
+            const resistor = parseInt(resistorSlider.value);
+            const brightness = calculateBrightness(resistor);
+            const speed = brightness * BASE_SPEED;
+            
+            for (let i = 0; i < ELECTRON_COUNT; i++) {
+                if (!isAnimating || brightness <= 0.01) continue;
+                
+                positions[i] += speed;
+                const pos = getPosition(positions[i]);
+                electrons[i].setAttribute('cx', pos.x);
+                electrons[i].setAttribute('cy', pos.y);
+            }
+            
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        // Update LED appearance
+        function updateLED() {
+            const resistor = parseInt(resistorSlider.value);
+            resistorValueDisplay.textContent = formatResistance(resistor);
+            resistorValueLabel.textContent = formatResistance(resistor) + "Ω";
+            
+            const brightness = calculateBrightness(resistor);
+            const glowOpacity = brightness * 0.9;
+            const redIntensity = Math.floor(50 + (205 * brightness));
+            
+            if (brightness <= 0.01) {
+                ledBody.style.fill = "#222";
+                ledBody.style.filter = "none";
+                glowEffect.style.opacity = "0";
+            } else {
+                ledBody.style.fill = `rgb(${redIntensity}, 0, 0)`;
+                ledBody.style.filter = `drop-shadow(0 0 ${5 + brightness * 10}px rgba(255,30,30,${glowOpacity}))`;
+                glowEffect.style.opacity = glowOpacity.toString();
+                glowEffect.style.transform = `scale(${0.6 + brightness * 0.8})`;
+            }
+            
+            animateBtn.disabled = brightness <= 0.01;
+        }
+        
+        // Toggle animation
+        function toggleAnimation() {
+            isAnimating = !isAnimating;
+            animateBtn.textContent = isAnimating ? 'Pause Animation' : 'Resume Animation';
+            
+            if (isAnimating && calculateBrightness(parseInt(resistorSlider.value)) > 0.01) {
+                animate();
+            }
+        }
+        
+        // Initialize
+        createElectrons();
+        updateLED();
+        animate();
+        
+        // Event listeners
+        resistorSlider.addEventListener('input', updateLED);
+        animateBtn.addEventListener('click', toggleAnimation);
+    </script>
+</body>
+</html>
